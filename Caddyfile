@@ -1,0 +1,8 @@
+:10000
+
+root * /srv/app/public
+encode gzip zstd
+
+php_fastcgi unix//run/php-fpm.sock
+
+file_server
