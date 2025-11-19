@@ -1,31 +1,33 @@
-# --- Build stage ---------------------------------------------------
-FROM php:8.2 as build
+FROM php:8.2-apache
 
-RUN apt-get update && apt-get install -y \
-    zip unzip git curl libpng-dev \
-    && docker-php-ext-install pdo_mysql
+# Instala extensões básicas PHP
+RUN docker-php-ext-install pdo pdo_mysql
 
-COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
+# Ativa mod_rewrite (importante para Laravel)
+RUN a2enmod rewrite
 
 WORKDIR /var/www/html
 
+# Copia o projeto
 COPY . .
 
-RUN composer install --optimize-autoloader --no-dev
+# Gera chave do Laravel direto no arquivo env do container
+RUN echo "<?php return ['key' => 'base64:Vg7DmwPhlF3Qn7mSdG4aEoUo2I0Y8yvTanU5XkWxMSo='];" > config/app-key.php
 
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && npm install \
-    && npm run build
+# Força Laravel a usar essa chave
+RUN sed -i "s/'key' => env('APP_KEY', ''),/'key' => require __DIR__.'\/app-key.php',/" config/app.php
 
-# --- Production stage ---------------------------------------------------
-FROM php:8.2
+# Dá permissão
+RUN chown -R www-data:www-data storage bootstrap/cache
 
-WORKDIR /var/www/html
-COPY --from=build /var/www/html /var/www/html
+# Configura o Apache para permitir URLs amigáveis
+RUN sed -i 's/AllowOverride None/AllowOverride All/' /etc/apache2/apache2.conf
 
-RUN chmod -R 777 storage bootstrap/cache
+# Builda o frontend
+RUN apt-get update && apt-get install -y npm
+RUN npm install
+RUN npm run build
 
-ENV PORT 10000
+EXPOSE 80
 
-CMD php -S 0.0.0.0:$PORT -t public
+CMD ["apache2-foreground"]
