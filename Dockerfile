@@ -1,36 +1,38 @@
-# --- Build stage ---------------------------------------------------
+# --------------------------
+# Build Stage
+# --------------------------
 FROM php:8.2-fpm AS build
 
 RUN apt-get update && apt-get install -y \
     curl zip unzip git \
     && docker-php-ext-install pdo_mysql
 
-# Instala Composer
 COPY --from=composer:2.7 /usr/bin/composer /usr/bin/composer
 
-# Copia arquivos do projeto
 WORKDIR /var/www/html
 COPY . .
 
-# Instala dependências PHP
 RUN composer install --optimize-autoloader --no-dev
 
-# Instala dependências Node e builda assets
+# Node + Vite build
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && npm install \
     && npm run build
 
-# --- Production stage ------------------------------------------------
-FROM php:8.2-fpm
+# --------------------------
+# Production Stage
+# --------------------------
+FROM caddy:2.7
 
-RUN docker-php-ext-install pdo_mysql
+# Copia arquivos do Laravel
+COPY --from=build /var/www/html /srv/app
 
-WORKDIR /var/www/html
+# Copia config do Caddy
+COPY Caddyfile /etc/caddy/Caddyfile
 
-COPY --from=build /var/www/html /var/www/html
+# Permissões
+RUN chmod -R 777 /srv/app/storage /srv/app/bootstrap/cache
 
-# Laravel permissions
-RUN chown -R www-data:www-data storage bootstrap/cache
-
-CMD ["php", "-S", "0.0.0.0:10000", "-t", "public"]
+# Executa migrations no start (opcional)
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]
